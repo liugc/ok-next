@@ -1,5 +1,6 @@
 {
   "name": "nextjs-template",
+  "entry": "./edge/ai-proxy.js",
   "installCommand": "npm install",
   "assets": {
     "directory": "./out",
