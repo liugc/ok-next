@@ -16,10 +16,6 @@ const PROXY_PREFIXES = ['/v1', '/api'];
 // 不向客户端透传的响应头：body 已被运行时解压，content-length 不再可信
 const STRIPPED_RESPONSE_HEADERS = new Set(['content-length', 'transfer-encoding']);
 
-// 临时诊断入口：返回边缘节点出口 IP 归属与上游探测结果
-const DIAG_PATH = '/__diag';
-const SENSITIVE_HEADERS = new Set(['authorization', 'cookie', 'proxy-authorization']);
-
 function isProxyPath(pathname) {
   return PROXY_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(prefix + '/')
@@ -36,51 +32,8 @@ function jsonError(status, message) {
   );
 }
 
-async function diagnose(request) {
-  const report = {};
-
-  const visibleHeaders = {};
-  try {
-    request.headers.forEach((value, name) => {
-      visibleHeaders[name] = SENSITIVE_HEADERS.has(name.toLowerCase()) ? '<redacted>' : value;
-    });
-  } catch (err) {
-    report.headerError = err.message;
-  }
-  report.requestHeaders = visibleHeaders;
-
-  // 1. 边缘节点的出口 IP 归属
-  try {
-    const res = await fetch('https://ipinfo.io/json');
-    report.egress = await res.json();
-  } catch (err) {
-    report.egress = { error: err.message };
-  }
-
-  // 2. 从同一出口访问上游端点得到的真实响应
-  try {
-    const res = await fetch(UPSTREAM_ORIGIN + '/v1/models', { method: 'GET' });
-    report.upstream = {
-      status: res.status,
-      server: res.headers.get('server'),
-      xSer: res.headers.get('x-ser'),
-      bodyPreview: (await res.text()).slice(0, 200),
-    };
-  } catch (err) {
-    report.upstream = { error: err.message };
-  }
-
-  return new Response(JSON.stringify(report, null, 2), {
-    headers: { 'content-type': 'application/json; charset=utf-8' },
-  });
-}
-
 async function handleRequest(request) {
   const url = new URL(request.url);
-
-  if (url.pathname === DIAG_PATH) {
-    return diagnose(request);
-  }
 
   if (!isProxyPath(url.pathname)) {
     return jsonError(404, `No proxy route for ${request.method} ${url.pathname}`);
